@@ -989,6 +989,61 @@ def test_pearson_corr() -> None:
     assert out.to_list() == pytest.approx([0.6546536707079772, -5.477514993831792e-1])
 
 
+def test_weighted_pearson_corr() -> None:
+    ldf = pl.LazyFrame(
+        {
+            "era": [
+                1,
+                1,
+                1,
+                2,
+                2,
+                2,
+                1,
+                1,
+                1,
+                2,
+            ],
+            "prediction": [2, 4, 5, 190, 1, 4, None, -1, -1, None],
+            "target": [
+                1,
+                3,
+                2,
+                1,
+                43,
+                3,
+                -1,
+                None,
+                -1,
+                None,
+            ],
+            "weights": [1, 2, 3, 3, 2, 1, -1, -1, None, None],
+        }
+    )
+
+    out = (
+        ldf.group_by("era", maintain_order=True).agg(
+            pl.corr(
+                pl.col("prediction"),
+                pl.col("target"),
+                weights=pl.col("weights"),
+                method="pearson",
+            ).alias("c"),
+        )
+    ).collect()["c"]
+    assert out.to_list() == pytest.approx([0.4166547104932136, -0.7393906862967463])
+
+    # we can also pass in column names directly
+    out = (
+        ldf.group_by("era", maintain_order=True).agg(
+            pl.corr("prediction", "target", weights="weights", method="pearson").alias(
+                "c"
+            ),
+        )
+    ).collect()["c"]
+    assert out.to_list() == pytest.approx([0.4166547104932136, -0.7393906862967463])
+
+
 def test_null_count() -> None:
     lf = pl.LazyFrame({"a": [1, 2, None, 2], "b": [None, 3, None, 3]})
     assert lf.null_count().collect().rows() == [(1, 2)]

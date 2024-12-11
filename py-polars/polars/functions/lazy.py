@@ -780,6 +780,7 @@ def corr(
     a: IntoExpr,
     b: IntoExpr,
     *,
+    weights: IntoExpr = None,
     method: CorrelationMethod = "pearson",
     ddof: int | None = None,
     propagate_nans: bool = False,
@@ -798,6 +799,8 @@ def corr(
 
         .. deprecated:: 1.17.0
 
+    weights : Optional[Union[str, Expr]]
+        Weights used when computing correlation. If `None`, no weights are used.
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
@@ -855,9 +858,18 @@ def corr(
     b = parse_into_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b))
+        if weights is None:
+            return wrap_expr(plr.pearson_corr(a, b))
+        else:
+            weights = parse_into_expression(weights)
+            return wrap_expr(plr.weighted_pearson_corr(a, b, weights))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        if weights is None:
+            return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
+        else:
+            raise NotImplementedError(
+                "Spearman rank correlation with weights is not yet implemented."
+            )
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)
@@ -1876,7 +1888,7 @@ def collect_all_async(
 
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
-    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    ) = (_GeventDataFrameResult() if gevent else _AioDataFrameResult())
     plr.collect_all_with_callback(prepared, result._callback_all)
     return result
 

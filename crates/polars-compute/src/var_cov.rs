@@ -46,6 +46,16 @@ pub struct PearsonState {
     dp_yy: f64,
 }
 
+#[derive(Default, Clone)]
+pub struct WeightedPearsonState {
+    weight_sum: f64,
+    mean_x: f64,
+    mean_y: f64,
+    dp_xx: f64,
+    dp_xy: f64,
+    dp_yy: f64,
+}
+
 impl VarState {
     fn new(x: &[f64]) -> Self {
         if x.is_empty() {
@@ -81,7 +91,8 @@ impl VarState {
         let other_weight_frac = other.weight / new_weight;
         let delta_mean = self.mean - other.mean;
         let new_mean = self.mean - delta_mean * other_weight_frac;
-        self.dp += other.dp + other.weight * (new_mean - other.mean) * delta_mean;
+        self.dp +=
+            other.dp + other.weight * (new_mean - other.mean) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
     }
@@ -129,7 +140,8 @@ impl CovState {
         let delta_mean_y = self.mean_y - other.mean_y;
         let new_mean_x = self.mean_x - delta_mean_x * other_weight_frac;
         let new_mean_y = self.mean_y - delta_mean_y * other_weight_frac;
-        self.dp_xy += other.dp_xy + other.weight * (new_mean_x - other.mean_x) * delta_mean_y;
+        self.dp_xy += other.dp_xy
+            + other.weight * (new_mean_x - other.mean_x) * delta_mean_y;
         self.weight = new_weight;
         self.mean_x = new_mean_x;
         self.mean_y = new_mean_y;
@@ -184,10 +196,80 @@ impl PearsonState {
         let delta_mean_y = self.mean_y - other.mean_y;
         let new_mean_x = self.mean_x - delta_mean_x * other_weight_frac;
         let new_mean_y = self.mean_y - delta_mean_y * other_weight_frac;
-        self.dp_xx += other.dp_xx + other.weight * (new_mean_x - other.mean_x) * delta_mean_x;
-        self.dp_xy += other.dp_xy + other.weight * (new_mean_x - other.mean_x) * delta_mean_y;
-        self.dp_yy += other.dp_yy + other.weight * (new_mean_y - other.mean_y) * delta_mean_y;
+        self.dp_xx += other.dp_xx
+            + other.weight * (new_mean_x - other.mean_x) * delta_mean_x;
+        self.dp_xy += other.dp_xy
+            + other.weight * (new_mean_x - other.mean_x) * delta_mean_y;
+        self.dp_yy += other.dp_yy
+            + other.weight * (new_mean_y - other.mean_y) * delta_mean_y;
         self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
+    }
+
+    pub fn finalize(&self) -> f64 {
+        let denom = (self.dp_xx * self.dp_yy).sqrt();
+        if denom == 0.0 {
+            f64::NAN
+        } else {
+            self.dp_xy / denom
+        }
+    }
+}
+
+impl WeightedPearsonState {
+    fn new(x: &[f64], y: &[f64], w: &[f64]) -> Self {
+        assert!(x.len() == y.len());
+        assert!(x.len() == w.len());
+        if x.is_empty() {
+            return Self::default();
+        }
+
+        let weight_sum = alg_sum_f64(w.iter().copied());
+        if weight_sum == 0.0 {
+            return Self::default();
+        }
+        let inv_weight_sum = 1.0 / weight_sum;
+        let mean_x = alg_sum_f64(x.iter().zip(w).map(|(&xi, &wi)| xi * wi))
+            * inv_weight_sum;
+        let mean_y = alg_sum_f64(y.iter().zip(w).map(|(&yi, &wi)| yi * wi))
+            * inv_weight_sum;
+        let mut dp_xx = 0.0;
+        let mut dp_xy = 0.0;
+        let mut dp_yy = 0.0;
+        for ((xi, yi), wi) in x.iter().zip(y.iter()).zip(w.iter()) {
+            dp_xx = alg_add_f64(dp_xx, wi * (xi - mean_x) * (xi - mean_x));
+            dp_xy = alg_add_f64(dp_xy, wi * (xi - mean_x) * (yi - mean_y));
+            dp_yy = alg_add_f64(dp_yy, wi * (yi - mean_y) * (yi - mean_y));
+        }
+        Self {
+            weight_sum,
+            mean_x,
+            mean_y,
+            dp_xx,
+            dp_xy,
+            dp_yy,
+        }
+    }
+
+    pub fn combine(&mut self, other: &Self) {
+        if other.weight_sum == 0.0 {
+            return;
+        }
+
+        let new_weight_sum = self.weight_sum + other.weight_sum;
+        let other_weight_sum_frac = other.weight_sum / new_weight_sum;
+        let delta_mean_x = self.mean_x - other.mean_x;
+        let delta_mean_y = self.mean_y - other.mean_y;
+        let new_mean_x = self.mean_x - delta_mean_x * other_weight_sum_frac;
+        let new_mean_y = self.mean_y - delta_mean_y * other_weight_sum_frac;
+        self.dp_xx += other.dp_xx
+            + other.weight_sum * (new_mean_x - other.mean_x) * delta_mean_x;
+        self.dp_xy += other.dp_xy
+            + other.weight_sum * (new_mean_x - other.mean_x) * delta_mean_y;
+        self.dp_yy += other.dp_yy
+            + other.weight_sum * (new_mean_y - other.mean_y) * delta_mean_y;
+        self.weight_sum = new_weight_sum;
         self.mean_x = new_mean_x;
         self.mean_y = new_mean_y;
     }
@@ -247,6 +329,33 @@ where
     }
 }
 
+fn chunk_as_float_ternary<T, U, V, I, F>(it: I, mut f: F)
+where
+    T: NativeType + AsPrimitive<f64>,
+    U: NativeType + AsPrimitive<f64>,
+    V: NativeType + AsPrimitive<f64>,
+    I: IntoIterator<Item = (T, U, V)>,
+    F: FnMut(&[f64], &[f64], &[f64]),
+{
+    let mut left_chunk = [0.0; CHUNK_SIZE];
+    let mut middle_chunk = [0.0; CHUNK_SIZE];
+    let mut right_chunk = [0.0; CHUNK_SIZE];
+    let mut i = 0;
+    for (l, m, r) in it {
+        if i >= CHUNK_SIZE {
+            f(&left_chunk, &middle_chunk, &right_chunk);
+            i = 0;
+        }
+        left_chunk[i] = l.as_();
+        middle_chunk[i] = m.as_();
+        right_chunk[i] = r.as_();
+        i += 1;
+    }
+    if i > 0 {
+        f(&left_chunk[..i], &middle_chunk[..i], &right_chunk[..i]);
+    }
+}
+
 pub fn var<T>(arr: &PrimitiveArray<T>) -> VarState
 where
     T: NativeType + AsPrimitive<f64>,
@@ -287,7 +396,10 @@ where
     out
 }
 
-pub fn pearson_corr<T, U>(x: &PrimitiveArray<T>, y: &PrimitiveArray<U>) -> PearsonState
+pub fn pearson_corr<T, U>(
+    x: &PrimitiveArray<T>,
+    y: &PrimitiveArray<U>,
+) -> PearsonState
 where
     T: NativeType + AsPrimitive<f64>,
     U: NativeType + AsPrimitive<f64>,
@@ -305,6 +417,45 @@ where
         chunk_as_float_binary(
             x.values().iter().copied().zip(y.values().iter().copied()),
             |l, r| out.combine(&PearsonState::new(l, r)),
+        );
+    }
+    out
+}
+
+pub fn weighted_pearson_corr<T, U, V>(
+    x: &PrimitiveArray<T>,
+    y: &PrimitiveArray<U>,
+    weights: &PrimitiveArray<V>,
+) -> WeightedPearsonState
+where
+    T: NativeType + AsPrimitive<f64>,
+    U: NativeType + AsPrimitive<f64>,
+    V: NativeType + AsPrimitive<f64>,
+{
+    assert!(x.len() == y.len());
+    assert!(x.len() == weights.len());
+    let mut out = WeightedPearsonState::default();
+    if x.has_nulls() || y.has_nulls() || weights.has_nulls() {
+        chunk_as_float_ternary(
+            x.iter().zip(y.iter()).zip(weights.iter()).filter_map(
+                |((lx, ly), r)| {
+                    lx.copied()
+                        .zip(ly.copied())
+                        .zip(r.copied())
+                        .map(|((x_val, y_val), w_val)| (x_val, y_val, w_val))
+                },
+            ),
+            |l, r, w| out.combine(&WeightedPearsonState::new(l, r, w)),
+        );
+    } else {
+        chunk_as_float_ternary(
+            x.values()
+                .iter()
+                .copied()
+                .zip(y.values().iter().copied())
+                .zip(weights.values().iter().copied())
+                .map(|((x_val, y_val), w_val)| (x_val, y_val, w_val)),
+            |l, r, w| out.combine(&WeightedPearsonState::new(l, r, w)),
         );
     }
     out

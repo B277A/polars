@@ -36,6 +36,25 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
     }
 }
 
+/// Compute the weighted pearson correlation between two columns with the
+/// third column as weights.
+pub fn weighted_pearson_corr(a: Expr, b: Expr, w: Expr) -> Expr {
+    let input = vec![a, b, w];
+    let function = FunctionExpr::Correlation {
+        method: CorrelationMethod::WeightedPearson,
+    };
+    Expr::Function {
+        input,
+        function,
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            cast_to_supertypes: Some(Default::default()),
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+            ..Default::default()
+        },
+    }
+}
+
 /// Compute the spearman rank correlation between two columns.
 /// Missing data will be excluded from the computation.
 /// # Arguments
@@ -62,7 +81,12 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
 }
 
 #[cfg(all(feature = "rolling_window", feature = "cov"))]
-fn dispatch_corr_cov(x: Expr, y: Expr, options: RollingCovOptions, is_corr: bool) -> Expr {
+fn dispatch_corr_cov(
+    x: Expr,
+    y: Expr,
+    options: RollingCovOptions,
+    is_corr: bool,
+) -> Expr {
     // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
     let rolling_options = RollingOptionsFixedWindow {
         window_size: options.window_size as usize,

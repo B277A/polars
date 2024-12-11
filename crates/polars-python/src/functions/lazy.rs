@@ -113,7 +113,10 @@ pub fn col(name: &str) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
+pub fn collect_all(
+    lfs: Vec<PyLazyFrame>,
+    py: Python,
+) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
 
     let out = py.allow_threads(|| {
@@ -208,7 +211,11 @@ pub fn concat_arr(s: Vec<PyExpr>) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
-pub fn concat_str(s: Vec<PyExpr>, separator: &str, ignore_nulls: bool) -> PyExpr {
+pub fn concat_str(
+    s: Vec<PyExpr>,
+    separator: &str,
+    ignore_nulls: bool,
+) -> PyExpr {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     dsl::concat_str(s, separator, ignore_nulls).into()
 }
@@ -230,7 +237,12 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn cum_fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
+pub fn cum_fold(
+    acc: PyExpr,
+    lambda: PyObject,
+    exprs: Vec<PyExpr>,
+    include_init: bool,
+) -> PyExpr {
     let exprs = exprs.to_exprs();
 
     let func = move |a: Column, b: Column| {
@@ -325,7 +337,10 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
-pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_horizontal(
+    lfs: &Bound<'_, PyAny>,
+    parallel: bool,
+) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
@@ -341,14 +356,16 @@ pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<
         to_supertypes: false,
         ..Default::default()
     };
-    let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
+    let lf = dsl::functions::concat_lf_horizontal(lfs, args)
+        .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
 #[pyfunction]
 pub fn concat_expr(e: Vec<PyExpr>, rechunk: bool) -> PyResult<PyExpr> {
     let e = e.to_exprs();
-    let e = dsl::functions::concat_expr(e, rechunk).map_err(PyPolarsErr::from)?;
+    let e =
+        dsl::functions::concat_expr(e, rechunk).map_err(PyPolarsErr::from)?;
     Ok(e.into())
 }
 
@@ -436,7 +453,11 @@ pub fn nth(n: i64) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyResult<PyExpr> {
+pub fn lit(
+    value: &Bound<'_, PyAny>,
+    allow_object: bool,
+    is_scalar: bool,
+) -> PyResult<PyExpr> {
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::lit(val).into())
@@ -454,9 +475,9 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     } else if let Ok(series) = value.extract::<PySeries>() {
         let s = series.series;
         if is_scalar {
-            let av = s
-                .get(0)
-                .map_err(|_| PyValueError::new_err("expected at least 1 value"))?;
+            let av = s.get(0).map_err(|_| {
+                PyValueError::new_err("expected at least 1 value")
+            })?;
             let av = av.into_static();
             Ok(dsl::lit(Scalar::new(s.dtype().clone(), av)).into())
         } else {
@@ -480,8 +501,13 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
                 let s = Python::with_gil(|py| {
-                    PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)
-                        .series
+                    PySeries::new_object(
+                        py,
+                        "",
+                        vec![ObjectValue::from(value.into_py(py))],
+                        false,
+                    )
+                    .series
                 });
                 Ok(dsl::lit(s).into())
             },
@@ -500,12 +526,24 @@ pub fn map_mul(
     map_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    map::lazy::map_mul(&pyexpr, py, lambda, output_type, map_groups, returns_scalar)
+    map::lazy::map_mul(
+        &pyexpr,
+        py,
+        lambda,
+        output_type,
+        map_groups,
+        returns_scalar,
+    )
 }
 
 #[pyfunction]
 pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
     dsl::pearson_corr(a.inner, b.inner).into()
+}
+
+#[pyfunction]
+pub fn weighted_pearson_corr(a: PyExpr, b: PyExpr, weights: PyExpr) -> PyExpr {
+    dsl::weighted_pearson_corr(a.inner, b.inner, weights.inner).into()
 }
 
 #[pyfunction]
@@ -525,7 +563,11 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 
 #[pyfunction]
 #[pyo3(signature = (value, n, dtype=None))]
-pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+pub fn repeat(
+    value: PyExpr,
+    n: PyExpr,
+    dtype: Option<Wrap<DataType>>,
+) -> PyResult<PyExpr> {
     let mut value = value.inner;
     let n = n.inner;
 
@@ -537,7 +579,11 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
 }
 
 #[pyfunction]
-pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, propagate_nans: bool) -> PyExpr {
+pub fn spearman_rank_corr(
+    a: PyExpr,
+    b: PyExpr,
+    propagate_nans: bool,
+) -> PyExpr {
     #[cfg(feature = "propagate_nans")]
     {
         dsl::spearman_rank_corr(a.inner, b.inner, propagate_nans).into()
